@@ -37,17 +37,29 @@ processPrivacyAgreement()
 waitForAppBootScreen() {
     global session
 
+    if (IsFunc("markRunStartEpochIfPending"))
+        markRunStartEpochIfPending(session.get("scriptName"))
+
     bootTimeoutSec := 90
     session.set("failSafe", A_TickCount)
     CreateStatusMessage("Waiting for app boot screen...",,,, false)
     LogInfo("Boot gate: waiting for startup screen", "ADB.txt")
 
     lastStatusSec := -1
+    welcomeBackAdvancing := false
+    welcomeBackUseSecondClick := false
     Loop {
         if (handleAppHealthDuringSearch("boot", true))
             return false
 
         failSafeTime := (A_TickCount - session.get("failSafe")) // 1000
+        ; Multi-page Welcome Back: once seen, keep clicking Next/OK even if page-1 needle is gone.
+        if (FindOrLoseImage("Boot_WelcomeBack", 0, 0, 20, true)) {
+            if (!welcomeBackAdvancing)
+                LogInfo("Boot gate: advancing past Welcome Back popup", "ADB.txt")
+            welcomeBackAdvancing := true
+            CreateStatusMessage("Dismissing Welcome Back popup...",,,, false)
+        }
         if (FindOrLoseImage("Boot_Welcome", 0, 0, 30, true)) {
             LogInfo("Boot gate: Welcome title screen ready", "ADB.txt")
             return true
@@ -68,6 +80,16 @@ waitForAppBootScreen() {
             || FindOrLoseImage("Common_ActivatedSocialInMainMenu", 0, , , true)) {
             LogInfo("Boot gate: main screen ready (skipped Welcome)", "ADB.txt")
             return true
+        }
+
+        if (welcomeBackAdvancing) {
+            if (welcomeBackUseSecondClick)
+                adbClick_wbb(194, 433)
+            else
+                adbClick_wbb(139, 432)
+            welcomeBackUseSecondClick := !welcomeBackUseSecondClick
+            Sleep, 500
+            continue
         }
 
         if (failSafeTime != lastStatusSec) {
@@ -150,17 +172,37 @@ startPreProcess(methodType){
 
     session.set("failSafe", A_TickCount)
     failSafeTime := 0
+    welcomeBackAdvancing := false
+    welcomeBackUseSecondClick := false
     Loop, {
         skipGenericButtonFallback := false
 
         if (handleAppHealthDuringSearch(findImageName))
             break
 
+        ; Multi-page Welcome Back: once seen, keep clicking Next/OK even if page-1 needle is gone.
+        if (FindOrLoseImage("Boot_WelcomeBack", 0, 0, 20, true)) {
+            if (!welcomeBackAdvancing)
+                LogInfo("Entering gate: advancing past Welcome Back popup", "ADB.txt")
+            welcomeBackAdvancing := true
+            CreateStatusMessage("Dismissing Welcome Back popup...",,,, false)
+        }
+
         if(methodType = "Inject Wonderpick 96P+" && DismissFriendFlowBlockingPopup("Entering Social"))
             continue
 
         if(FindOrLoseImage(needleName, 0, failSafeTime, , true))
             break
+
+        if (welcomeBackAdvancing) {
+            if (welcomeBackUseSecondClick)
+                adbClick_wbb(194, 433)
+            else
+                adbClick_wbb(139, 432)
+            welcomeBackUseSecondClick := !welcomeBackUseSecondClick
+            Sleep, 500
+            continue
+        }
 
         adbClick_wbb(clickX, clickY)
         Delay(0.5)
